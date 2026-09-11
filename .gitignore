@@ -1,0 +1,15 @@
+.env
+backend/.env
+
+__pycache__/
+*.pyc
+venv/
+env/
+*.egg-info/
+
+*.db
+
+.DS_Store
+.vscode/
+.idea
+

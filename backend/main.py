@@ -19,7 +19,7 @@ app = FastAPI(title="AI Study Assistant API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # restrict this to your real frontend domain once deployed
+    allow_origins=["*"],  
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,9 +44,6 @@ SYSTEM_PROMPT = {
 
 class ChatRequest(BaseModel):
     message: str
-    # The frontend keeps the running conversation in memory (it resets on
-    # refresh, since there's no database) and sends it back each time so
-    # the model has context.
     history: list[dict] = []
 
 

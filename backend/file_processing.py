@@ -5,9 +5,6 @@ import pytesseract
 import pdfplumber
 import docx
 
-# Keep prompts a reasonable size - very long documents get truncated
-# before being sent to Groq, both for cost and because the point is a
-# summary, not reproducing the whole document back.
 MAX_EXTRACTED_CHARS = 15000
 
 

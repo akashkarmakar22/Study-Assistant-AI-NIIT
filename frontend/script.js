@@ -1,128 +1,259 @@
 const API_URL = "https://study-hall-qdhb.onrender.com/chat";
 
-const chatWindow = document.getElementById("chat-window");
+const sidebar = document.getElementById("sidebar");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+const menuBtn = document.getElementById("menu-btn");
+const newChatBtn = document.getElementById("new-chat-btn");
+const sessionListEl = document.getElementById("session-list");
+const chatArea = document.getElementById("chat-area");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
 const errorBanner = document.getElementById("error-banner");
 const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("attach-btn");
-const clearBtn = document.getElementById("clear-btn");
+const themeToggle = document.getElementById("theme-toggle");
+const themeToggleMobile = document.getElementById("theme-toggle-mobile");
 
-const statMessages = document.getElementById("stat-messages");
-const statDocs = document.getElementById("stat-docs");
-const statTime = document.getElementById("stat-time");
+//Theme
 
-let history = [];
-let messagesSent = 0;
-let docsSummarized = 0;
-const sessionStart = Date.now();
+const THEME_KEY = "aurora_theme";
 
-// ---------- Persistence ----------
-// Chat history lives in this browser only (localStorage) - there's no
-// database, so it won't follow you to another device, but it does survive
-// refreshes and closing/reopening the tab.
-const HISTORY_KEY = "study_dashboard_history";
-const STATS_KEY = "study_dashboard_stats";
-
-function saveState() {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  localStorage.setItem(STATS_KEY, JSON.stringify({ messagesSent, docsSummarized }));
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem(THEME_KEY, theme);
 }
 
-function loadState() {
-  try {
-    const savedHistory = localStorage.getItem(HISTORY_KEY);
-    const savedStats = localStorage.getItem(STATS_KEY);
-
-    if (savedHistory) {
-      history = JSON.parse(savedHistory);
-    }
-    if (savedStats) {
-      const parsed = JSON.parse(savedStats);
-      messagesSent = parsed.messagesSent || 0;
-      docsSummarized = parsed.docsSummarized || 0;
-    }
-  } catch (err) {
-    console.warn("Could not load saved chat history:", err);
-    history = [];
-  }
-}
-
-function renderSavedHistory() {
-  if (history.length === 0) {
-    addMessage("assistant", "Hey — what are we working through today? Paste your notes, ask me to explain something, upload a document to summarize, or have me quiz you.");
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) {
+    applyTheme(saved);
     return;
   }
-  history.forEach((m) => addMessage(m.role, m.content));
-  bumpStat(statMessages, messagesSent);
-  bumpStat(statDocs, docsSummarized);
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(prefersDark ? "dark" : "light");
 }
 
-// ---------- Stats ----------
-
-function updateSessionTime() {
-  const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  statTime.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-setInterval(updateSessionTime, 1000);
-
-function bumpStat(el, newValue) {
-  el.textContent = newValue;
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme");
+  applyTheme(current === "dark" ? "light" : "dark");
 }
 
-// ---------- Chat rendering ----------
+themeToggle.addEventListener("click", toggleTheme);
+themeToggleMobile.addEventListener("click", toggleTheme);
+initTheme();
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+//Mobile sidebar
+
+function openSidebar() {
+  sidebar.classList.add("open");
+  sidebarBackdrop.classList.remove("hidden");
 }
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  sidebarBackdrop.classList.add("hidden");
+}
+menuBtn.addEventListener("click", openSidebar);
+sidebarBackdrop.addEventListener("click", closeSidebar);
+
+//Sessions (multi-chat, saved in localStorage)
+
+const SESSIONS_KEY = "aurora_sessions";
+const ACTIVE_KEY = "aurora_active_session";
+
+let sessions = [];
+let activeId = null;
+
+function loadSessions() {
+  try {
+    const saved = localStorage.getItem(SESSIONS_KEY);
+    sessions = saved ? JSON.parse(saved) : [];
+  } catch {
+    sessions = [];
+  }
+  activeId = localStorage.getItem(ACTIVE_KEY);
+
+  if (sessions.length === 0) {
+    createSession();
+  } else if (!sessions.find((s) => s.id === activeId)) {
+    activeId = sessions[0].id;
+  }
+}
+
+function saveSessions() {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  localStorage.setItem(ACTIVE_KEY, activeId);
+}
+
+function createSession() {
+  const session = {
+    id: crypto.randomUUID(),
+    title: "New chat",
+    messages: [],
+  };
+  sessions.unshift(session);
+  activeId = session.id;
+  saveSessions();
+  return session;
+}
+
+function getActiveSession() {
+  return sessions.find((s) => s.id === activeId);
+}
+
+function deleteSession(id) {
+  sessions = sessions.filter((s) => s.id !== id);
+  if (sessions.length === 0) {
+    createSession();
+  } else if (activeId === id) {
+    activeId = sessions[0].id;
+  }
+  saveSessions();
+  renderSessionList();
+  renderChatArea();
+}
+
+function switchSession(id) {
+  activeId = id;
+  saveSessions();
+  renderSessionList();
+  renderChatArea();
+  closeSidebar();
+}
+
+function renderSessionList() {
+  sessionListEl.innerHTML = "";
+  sessions.forEach((session) => {
+    const item = document.createElement("div");
+    item.className = `session-item ${session.id === activeId ? "active" : ""}`;
+
+    const title = document.createElement("span");
+    title.className = "session-title";
+    title.textContent = session.title;
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "session-delete";
+    deleteBtn.setAttribute("aria-label", "Delete chat");
+    deleteBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 2l9 9M11 2l-9 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteSession(session.id);
+    });
+
+    item.appendChild(title);
+    item.appendChild(deleteBtn);
+    item.addEventListener("click", () => switchSession(session.id));
+    sessionListEl.appendChild(item);
+  });
+}
+
+//Markdown
 
 function renderMarkdown(text) {
-  const rawHtml = marked.parse(text, { breaks: true });
-  return DOMPurify.sanitize(rawHtml);
+  return DOMPurify.sanitize(marked.parse(text, { breaks: true }));
 }
 
-function addMessage(role, text) {
+//Chat area rendering
+
+const SUGGESTIONS = [
+  { emoji: "💡", text: "Explain a concept to me" },
+  { emoji: "📄", text: "Summarize my notes" },
+  { emoji: "🧠", text: "Quiz me on a topic" },
+  { emoji: "✍️", text: "Help me solve a problem" },
+];
+
+function renderChatArea() {
+  const session = getActiveSession();
+  chatArea.innerHTML = "";
+
+  if (!session || session.messages.length === 0) {
+    const hero = document.createElement("div");
+    hero.className = "hero";
+    hero.innerHTML = `
+      <h1 class="hero-title">Ready to ace your studies?</h1>
+      <p class="hero-subtitle">Ask a question, paste your notes, or upload a document — I'll explain, summarize, or quiz you on it.</p>
+      <div class="chip-grid"></div>
+    `;
+    const chipGrid = hero.querySelector(".chip-grid");
+    SUGGESTIONS.forEach((s) => {
+      const chip = document.createElement("button");
+      chip.className = "chip";
+      chip.type = "button";
+      chip.innerHTML = `<span class="chip-emoji">${s.emoji}</span><span>${s.text}</span>`;
+      chip.addEventListener("click", () => {
+        messageInput.value = s.text;
+        messageInput.focus();
+      });
+      chipGrid.appendChild(chip);
+    });
+    chatArea.appendChild(hero);
+    return;
+  }
+
+  const container = document.createElement("div");
+  container.className = "messages";
+  session.messages.forEach((m) => {
+    container.appendChild(buildMessageRow(m.role, m.content));
+  });
+  chatArea.appendChild(container);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function buildMessageRow(role, text, { animate = false } = {}) {
   const row = document.createElement("div");
-  row.className = `row ${role} enter`;
+  row.className = animate ? `row ${role} enter` : `row ${role}`;
 
   if (role === "assistant") {
     const avatar = document.createElement("div");
-    avatar.className = "avatar-sm avatar-sm--ai";
+    avatar.className = "avatar-sm";
     avatar.textContent = "AI";
     row.appendChild(avatar);
   }
 
   const bubble = document.createElement("div");
   bubble.className = `bubble bubble--${role}`;
-
   if (role === "assistant") {
     bubble.innerHTML = renderMarkdown(text);
   } else {
     bubble.textContent = text;
   }
   row.appendChild(bubble);
+  return row;
+}
 
-  chatWindow.appendChild(row);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+function appendMessageLive(role, text) {
+  let container = chatArea.querySelector(".messages");
+  if (!container) {
+    // First message in this session - replace hero with a fresh list.
+    chatArea.innerHTML = "";
+    container = document.createElement("div");
+    container.className = "messages";
+    chatArea.appendChild(container);
+  }
+  const row = buildMessageRow(role, text, { animate: true });
+  container.appendChild(row);
+  chatArea.scrollTop = chatArea.scrollHeight;
   row.addEventListener("animationend", () => row.classList.remove("enter"), { once: true });
   return row;
 }
 
 function addLoadingRow() {
+  let container = chatArea.querySelector(".messages");
+  if (!container) {
+    chatArea.innerHTML = "";
+    container = document.createElement("div");
+    container.className = "messages";
+    chatArea.appendChild(container);
+  }
   const row = document.createElement("div");
   row.className = "row assistant loading";
   row.innerHTML = `
-    <div class="avatar-sm avatar-sm--ai">AI</div>
+    <div class="avatar-sm">AI</div>
     <div class="bubble bubble--assistant">
       <span class="pulse-dot"></span><span class="pulse-dot"></span><span class="pulse-dot"></span>
     </div>`;
-  chatWindow.appendChild(row);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+  container.appendChild(row);
+  chatArea.scrollTop = chatArea.scrollHeight;
   return row;
 }
 
@@ -135,11 +266,21 @@ function clearError() {
   errorBanner.textContent = "";
 }
 
-// ---------- Chat send ----------
+function updateSessionTitle(session, firstMessage) {
+  if (session.title === "New chat") {
+    session.title = firstMessage.length > 36 ? firstMessage.slice(0, 36) + "…" : firstMessage;
+  }
+}
+
+//Send / Upload
 
 async function sendMessage(userText) {
-  addMessage("user", userText);
-  history.push({ role: "user", content: userText });
+  const session = getActiveSession();
+  appendMessageLive("user", userText);
+  session.messages.push({ role: "user", content: userText });
+  updateSessionTitle(session, userText);
+  saveSessions();
+  renderSessionList();
 
   const loadingRow = addLoadingRow();
   sendBtn.disabled = true;
@@ -149,7 +290,10 @@ async function sendMessage(userText) {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, history: history.slice(0, -1) }),
+      body: JSON.stringify({
+        message: userText,
+        history: session.messages.slice(0, -1),
+      }),
     });
 
     if (!response.ok) {
@@ -159,12 +303,9 @@ async function sendMessage(userText) {
 
     const data = await response.json();
     loadingRow.remove();
-    addMessage("assistant", data.reply);
-    history.push({ role: "assistant", content: data.reply });
-
-    messagesSent += 1;
-    bumpStat(statMessages, messagesSent);
-    saveState();
+    appendMessageLive("assistant", data.reply);
+    session.messages.push({ role: "assistant", content: data.reply });
+    saveSessions();
   } catch (err) {
     loadingRow.remove();
     showError(`Couldn't reach the assistant: ${err.message}`);
@@ -173,15 +314,10 @@ async function sendMessage(userText) {
   }
 }
 
-// ---------- File upload ----------
-
 async function uploadFile(file) {
-  const row = document.createElement("div");
-  row.className = "row user enter";
-  row.innerHTML = `<div class="bubble bubble--user">📎 ${escapeHtml(file.name)}</div>`;
-  chatWindow.appendChild(row);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
-  row.addEventListener("animationend", () => row.classList.remove("enter"), { once: true });
+  const session = getActiveSession();
+  appendMessageLive("user", `📎 ${file.name}`);
+  updateSessionTitle(session, file.name);
 
   const loadingRow = addLoadingRow();
   attachBtn.disabled = true;
@@ -204,13 +340,11 @@ async function uploadFile(file) {
 
     const data = await response.json();
     loadingRow.remove();
-    addMessage("assistant", data.summary);
-    history.push({ role: "user", content: `[Uploaded file: ${data.filename}]` });
-    history.push({ role: "assistant", content: data.summary });
-
-    docsSummarized += 1;
-    bumpStat(statDocs, docsSummarized);
-    saveState();
+    appendMessageLive("assistant", data.summary);
+    session.messages.push({ role: "user", content: `[Uploaded file: ${data.filename}]` });
+    session.messages.push({ role: "assistant", content: data.summary });
+    saveSessions();
+    renderSessionList();
   } catch (err) {
     loadingRow.remove();
     showError(`Couldn't process that file: ${err.message}`);
@@ -220,7 +354,7 @@ async function uploadFile(file) {
   }
 }
 
-// ---------- Events ----------
+// Events
 
 chatForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -237,18 +371,16 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 
-clearBtn.addEventListener("click", () => {
-  history = [];
-  messagesSent = 0;
-  docsSummarized = 0;
-  chatWindow.innerHTML = "";
-  localStorage.removeItem(HISTORY_KEY);
-  localStorage.removeItem(STATS_KEY);
-  bumpStat(statMessages, 0);
-  bumpStat(statDocs, 0);
-  addMessage("assistant", "New chat started — what are we working on?");
+newChatBtn.addEventListener("click", () => {
+  createSession();
+  renderSessionList();
+  renderChatArea();
+  closeSidebar();
+  messageInput.focus();
 });
 
-// Restore previous conversation (if any) on load.
-loadState();
-renderSavedHistory();
+// Init
+
+loadSessions();
+renderSessionList();
+renderChatArea();

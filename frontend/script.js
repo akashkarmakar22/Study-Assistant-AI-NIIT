@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8001/chat";
+const API_URL = "https://study-hall-qdhb.onrender.com/chat";
 
 const chatWindow = document.getElementById("chat-window");
 const chatForm = document.getElementById("chat-form");
